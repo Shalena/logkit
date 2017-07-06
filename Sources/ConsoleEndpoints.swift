@@ -22,25 +22,25 @@ import Foundation
 
 /// An internal protocol that facilitates `LXConsoleEndpoint` in operating either synchronously or asynchronously.
 private protocol LXConsoleWriter {
-    func writeData(data: NSData) -> Void
+    func writeData(_ data: Data) -> Void
 }
 
 
 //MARK: Console Endpoint
 
 /// An Endpoint that prints Log Entries to the console (`stderr`) in either a synchronous or asynchronous fashion.
-public class LXConsoleEndpoint: LXEndpoint {
+open class LXConsoleEndpoint: LXEndpoint {
     /// The minimum Priority Level a Log Entry must meet to be accepted by this Endpoint.
-    public var minimumPriorityLevel: LXPriorityLevel
+    open var minimumPriorityLevel: LXPriorityLevel
     /// The formatter used by this Endpoint to serialize a Log Entry’s `dateTime` property to a string.
-    public var dateFormatter: LXDateFormatter
+    open var dateFormatter: LXDateFormatter
     /// The formatter used by this Endpoint to serialize each Log Entry to a string.
-    public var entryFormatter: LXEntryFormatter
+    open var entryFormatter: LXEntryFormatter
     /// This Endpoint requires a newline character appended to each serialized Log Entry string.
-    public let requiresNewlines: Bool = true
+    open let requiresNewlines: Bool = true
 
     /// The actual output engine.
-    private let writer: LXConsoleWriter
+    fileprivate let writer: LXConsoleWriter
 
     /// Initialize a Console Endpoint.
     ///
@@ -58,7 +58,7 @@ public class LXConsoleEndpoint: LXEndpoint {
     ///                                   Defaults to `.standardFormatter()`.
     public init(
         synchronous: Bool = true,
-        minimumPriorityLevel: LXPriorityLevel = .All,
+        minimumPriorityLevel: LXPriorityLevel = .all,
         dateFormatter: LXDateFormatter = LXDateFormatter.standardFormatter(),
         entryFormatter: LXEntryFormatter = LXEntryFormatter.standardFormatter()
     ) {
@@ -75,12 +75,13 @@ public class LXConsoleEndpoint: LXEndpoint {
     }
 
     /// Writes a serialized Log Entry string to the console (`stderr`).
-    public func write(string: String) {
-        guard let data = string.dataUsingEncoding(NSUTF8StringEncoding) else {
+    open func write(_ string: String) {
+        guard let data = string.data(using: String.Encoding.utf8) else {
             assertionFailure("Failure to create data from entry string")
             return
         }
         self.writer.writeData(data)
+
     }
 
 }
@@ -92,14 +93,14 @@ public class LXConsoleEndpoint: LXEndpoint {
 private class LXSynchronousConsoleWriter: LXConsoleWriter {
 
     /// The console's (`stderr`) file handle.
-    private let handle = NSFileHandle.fileHandleWithStandardError()
+    fileprivate let handle = FileHandle.standardError
 
     /// Clean up.
     deinit { self.handle.closeFile() }
 
     /// Writes the data to the console (`stderr`).
-    private func writeData(data: NSData) {
-        self.handle.writeData(data)
+    fileprivate func writeData(_ data: Data) {
+        self.handle.write(data)
     }
 
 }
@@ -110,12 +111,12 @@ private class LXAsynchronousConsoleWriter: LXConsoleWriter {
 //TODO: open a dispatch IO channel to stderr instead of one-off writes?
 
     /// Writes the data to the console (`stderr`).
-    private func writeData(data: NSData) {
-        guard let dispatchData = dispatch_data_create(data.bytes, data.length, nil, nil) else {
-            assertionFailure("Failure to create data from entry string")
-            return
+    fileprivate func writeData(_ data: Data) {
+        let dispatchData = data.withUnsafeBytes { (pointer: UnsafePointer<UInt8>) -> DispatchData in
+            let bytes = UnsafeBufferPointer(start: pointer, count: data.count)
+            return DispatchData(bytesNoCopy: bytes)
         }
-        dispatch_write(STDERR_FILENO, dispatchData, LK_LOGKIT_QUEUE, { _, _ in })
+        DispatchIO.write(toFileDescriptor: STDERR_FILENO, data: dispatchData, runningHandlerOn: LK_LOGKIT_QUEUE, handler: { _, _ in })
     }
 
 }
